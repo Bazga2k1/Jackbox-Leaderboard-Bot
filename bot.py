@@ -1,22 +1,28 @@
 import os
+import sqlite3
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-from supabase import create_client, Client
 
 # ==========================================
 # 1. LOAD ENVIRONMENT VARIABLES
 # ==========================================
 load_dotenv()
-
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# ==========================================
+# 2. DATABASE SETUP (SQLite)
+# ==========================================
+# This creates a local file named 'scores.db' in the same folder
+conn = sqlite3.connect("scores.db")
+c = conn.cursor()
+c.execute('''CREATE TABLE IF NOT EXISTS jackbox (
+                player TEXT PRIMARY KEY, 
+                score INTEGER)''')
+conn.commit()
 
 # ==========================================
-# 2. DISCORD BOT CONFIGURATION
+# 3. DISCORD BOT CONFIGURATION
 # ==========================================
 intents = discord.Intents.default()
 intents.message_content = True
@@ -29,7 +35,7 @@ async def on_ready():
     print("------")
 
 # ==========================================
-# 3. GLOBAL ERROR HANDLER
+# 4. GLOBAL ERROR HANDLER
 # ==========================================
 @bot.event
 async def on_command_error(ctx, error):
@@ -37,32 +43,32 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.MissingRole):
         await ctx.send("❌ You do not have permission to use this command. You need the **ORGANIZACIJA** role.")
     elif isinstance(error, commands.CommandNotFound):
-        pass # Ignores typos like !addscor
+        pass # Ignores typos
     else:
-        # Prints other errors to your console for debugging
         print(f"Error in command {ctx.command}: {error}")
 
 # ==========================================
-# 4. HELPER FUNCTION TO UPDATE SCORE
+# 5. HELPER FUNCTION TO UPDATE SCORE
 # ==========================================
 def update_player_score(player_name: str, score_to_add: int) -> int:
-    response = supabase.table("jackbox").select("score").eq("player", player_name).execute()
+    """Queries local SQLite for existing score, adds new points, and updates."""
+    c.execute("SELECT score FROM jackbox WHERE player = ?", (player_name,))
+    row = c.fetchone()
     
-    current_score = 0
-    if response.data:
-        current_score = response.data[0]["score"]
+    if row:
+        # Player exists, add to their current score
+        new_total = row[0] + score_to_add
+        c.execute("UPDATE jackbox SET score = ? WHERE player = ?", (new_total, player_name))
+    else:
+        # New player, insert them
+        new_total = score_to_add
+        c.execute("INSERT INTO jackbox (player, score) VALUES (?, ?)", (player_name, new_total))
         
-    new_total = current_score + score_to_add
-    
-    supabase.table("jackbox").upsert({
-        "player": player_name,
-        "score": new_total
-    }).execute()
-    
+    conn.commit()
     return new_total
 
 # ==========================================
-# 5. BOT COMMANDS
+# 6. BOT COMMANDS
 # ==========================================
 
 # Command: !addscore @Player 1500 (RESTRICTED)
@@ -100,25 +106,27 @@ async def addscores(ctx, *args):
 @bot.command(name="resetboard")
 @commands.has_role("ORGANIZACIJA")
 async def resetboard(ctx):
-    supabase.table("jackbox").delete().neq("player", "").execute()
+    c.execute("DELETE FROM jackbox")
+    conn.commit()
     await ctx.send("🗑️ The leaderboard has been completely reset!")
 
 # Command: !leaderboard (PUBLIC - NO ROLE REQUIRED)
 @bot.command()
 async def leaderboard(ctx):
-    response = supabase.table("jackbox").select("player, score").order("score", desc=True).limit(10).execute()
+    c.execute("SELECT player, score FROM jackbox ORDER BY score DESC LIMIT 10")
+    rows = c.fetchall()
     
-    if not response.data:
+    if not rows:
         return await ctx.send("The leaderboard is currently empty! Go play some Jackbox.")
 
     board = "**🏆 Official Jackbox Leaderboard 🏆**\n\n"
-    for index, row in enumerate(response.data, 1):
-        board += f"**#{index}** {row['player']} — **{row['score']}** pts\n"
+    for index, row in enumerate(rows, 1):
+        board += f"**#{index}** {row[0]} — **{row[1]}** pts\n"
     
     await ctx.send(board)
 
 # ==========================================
-# 6. RUN BOT
+# 7. RUN BOT
 # ==========================================
 if __name__ == "__main__":
     if not BOT_TOKEN:
