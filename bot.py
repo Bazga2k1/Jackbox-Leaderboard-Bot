@@ -13,7 +13,6 @@ BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 # ==========================================
 # 2. DATABASE SETUP (SQLite)
 # ==========================================
-# This creates a local file named 'scores.db' in the same folder
 conn = sqlite3.connect("scores.db")
 c = conn.cursor()
 c.execute('''CREATE TABLE IF NOT EXISTS jackbox (
@@ -27,7 +26,8 @@ conn.commit()
 intents = discord.Intents.default()
 intents.message_content = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+# Disable default help command so we can use our custom one
+bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
 @bot.event
 async def on_ready():
@@ -56,11 +56,9 @@ def update_player_score(player_name: str, score_to_add: int) -> int:
     row = c.fetchone()
     
     if row:
-        # Player exists, add to their current score
         new_total = row[0] + score_to_add
         c.execute("UPDATE jackbox SET score = ? WHERE player = ?", (new_total, player_name))
     else:
-        # New player, insert them
         new_total = score_to_add
         c.execute("INSERT INTO jackbox (player, score) VALUES (?, ?)", (player_name, new_total))
         
@@ -70,6 +68,45 @@ def update_player_score(player_name: str, score_to_add: int) -> int:
 # ==========================================
 # 6. BOT COMMANDS
 # ==========================================
+
+# Command: !help (PUBLIC - NO ROLE REQUIRED)
+@bot.command(name="help")
+async def help_command(ctx):
+    """Displays the bot command manual."""
+    embed = discord.Embed(
+        title="🎮 Jackbox Leaderboard Manual",
+        description="Command reference for score tracking and leaderboards.",
+        color=discord.Color.blue()
+    )
+
+    embed.add_field(
+        name="🔒 Restricted Commands (ORGANIZACIJA Role Only)",
+        value=(
+            "• `!addscore @Player <score>`\n"
+            "  Adds points to a single player.\n"
+            "  *Example:* `!addscore @Alex 1500`\n\n"
+            "• `!addscores @P1 <s1> @P2 <s2> ...`\n"
+            "  Batch-adds points to multiple players.\n"
+            "  *Example:* `!addscores @Alex 4000 @Sam 3200`\n\n"
+            "• `!resetboard`\n"
+            "  Permanently wipes all scores from the database."
+        ),
+        inline=False
+    )
+
+    embed.add_field(
+        name="🌐 Public Commands (Everyone)",
+        value=(
+            "• `!leaderboard`\n"
+            "  Displays the top 10 players ranked by score.\n\n"
+            "• `!help`\n"
+            "  Displays this command manual."
+        ),
+        inline=False
+    )
+
+    embed.set_footer(text="Note: You must directly tag players (@User) for score commands to register.")
+    await ctx.send(embed=embed)
 
 # Command: !addscore @Player 1500 (RESTRICTED)
 @bot.command()
