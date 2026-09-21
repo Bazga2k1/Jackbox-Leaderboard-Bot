@@ -11,7 +11,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 # 1. LOAD ENVIRONMENT VARIABLES & FIREBASE
 # ==========================================
 load_dotenv()
-BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
 # Initialize Firebase (Requires serviceAccountKey.json in the same directory)
 try:
@@ -193,9 +193,9 @@ threading.Thread(target=run_health_server, daemon=True).start()
 # 7. RUN BOT
 # ==========================================
 if __name__ == "__main__":
-    if not BOT_TOKEN:
+    if not TOKEN:
         print("❌ Error: DISCORD_BOT_TOKEN is missing from your .env file!")
     elif db is None:
         print("❌ Error: Bot will not start without Firebase access.")
     else:
-        bot.run(BOT_TOKEN)
+        bot.run(TOKEN)
