@@ -4,6 +4,8 @@ from discord.ext import commands
 from dotenv import load_dotenv
 import firebase_admin
 from firebase_admin import credentials, firestore
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # ==========================================
 # 1. LOAD ENVIRONMENT VARIABLES & FIREBASE
@@ -171,7 +173,24 @@ async def leaderboard(ctx):
     await ctx.send(board)
 
 # ==========================================
-# 6. RUN BOT
+# 6. HEALTH CHECK SERVER (For Render Free Web Service)
+# ==========================================
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Jackbox Bot is online!")
+
+def run_health_server():
+    port = int(os.getenv("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    server.serve_forever()
+
+# Start the health check web server in a daemon thread
+threading.Thread(target=run_health_server, daemon=True).start()
+
+# ==========================================
+# 7. RUN BOT
 # ==========================================
 if __name__ == "__main__":
     if not BOT_TOKEN:
