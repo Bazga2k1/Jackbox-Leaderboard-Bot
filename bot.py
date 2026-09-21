@@ -1,32 +1,31 @@
 import os
-import sqlite3
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 # ==========================================
-# 1. LOAD ENVIRONMENT VARIABLES
+# 1. LOAD ENVIRONMENT VARIABLES & FIREBASE
 # ==========================================
 load_dotenv()
 BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
-# ==========================================
-# 2. DATABASE SETUP (SQLite)
-# ==========================================
-conn = sqlite3.connect("scores.db")
-c = conn.cursor()
-c.execute('''CREATE TABLE IF NOT EXISTS jackbox (
-                player TEXT PRIMARY KEY, 
-                score INTEGER)''')
-conn.commit()
+# Initialize Firebase (Requires serviceAccountKey.json in the same directory)
+try:
+    cred = credentials.Certificate("serviceAccountKey.json")
+    firebase_admin.initialize_app(cred)
+    db = firestore.client()
+except Exception as e:
+    print(f"❌ Firebase Error: {e}\nMake sure 'serviceAccountKey.json' is in your bot folder!")
+    db = None
 
 # ==========================================
-# 3. DISCORD BOT CONFIGURATION
+# 2. DISCORD BOT CONFIGURATION
 # ==========================================
 intents = discord.Intents.default()
 intents.message_content = True
 
-# Prefix set to ">"
 bot = commands.Bot(command_prefix=">", intents=intents, help_command=None)
 
 @bot.event
@@ -35,41 +34,41 @@ async def on_ready():
     print("------")
 
 # ==========================================
-# 4. GLOBAL ERROR HANDLER
+# 3. GLOBAL ERROR HANDLER
 # ==========================================
 @bot.event
 async def on_command_error(ctx, error):
-    """Handles errors when someone without the role tries to use a command."""
+    """Handles permission errors and ignores missing command errors."""
     if isinstance(error, commands.MissingRole):
         await ctx.send("❌ You do not have permission to use this command. You need the **ORGANIZACIJA** role.")
     elif isinstance(error, commands.CommandNotFound):
-        pass  # Ignores typos
+        pass  
     else:
         print(f"Error in command {ctx.command}: {error}")
 
 # ==========================================
-# 5. HELPER FUNCTION TO UPDATE SCORE
+# 4. HELPER FUNCTION TO UPDATE SCORE (FIRESTORE)
 # ==========================================
 def update_player_score(player_name: str, score_to_add: int) -> int:
-    """Queries local SQLite for existing score, adds new points, and updates."""
-    c.execute("SELECT score FROM jackbox WHERE player = ?", (player_name,))
-    row = c.fetchone()
+    """Queries the 'marathon' collection for an existing score, adds points, and updates."""
+    doc_ref = db.collection("marathon").document(player_name)
+    doc = doc_ref.get()
     
-    if row:
-        new_total = row[0] + score_to_add
-        c.execute("UPDATE jackbox SET score = ? WHERE player = ?", (new_total, player_name))
+    if doc.exists:
+        current_score = doc.to_dict().get("score", 0)
+        new_total = current_score + score_to_add
     else:
         new_total = score_to_add
-        c.execute("INSERT INTO jackbox (player, score) VALUES (?, ?)", (player_name, new_total))
         
-    conn.commit()
+    # Only store the score field; the document ID represents the player's username
+    doc_ref.set({"score": new_total})
     return new_total
 
 # ==========================================
-# 6. BOT COMMANDS
+# 5. BOT COMMANDS
 # ==========================================
 
-# Command: >help (PUBLIC - NO ROLE REQUIRED)
+# Command: >help (PUBLIC)
 @bot.command(name="help")
 async def help_command(ctx):
     """Displays the bot command manual."""
@@ -89,7 +88,7 @@ async def help_command(ctx):
             "  Batch-adds points to multiple players.\n"
             "  *Example:* `>addscores @Alex 4000 @Sam 3200`\n\n"
             "• `>resetboard`\n"
-            "  Permanently wipes all scores from the database."
+            "  Permanently wipes all scores from the marathon database."
         ),
         inline=False
     )
@@ -100,7 +99,7 @@ async def help_command(ctx):
             "• `>leaderboard`\n"
             "  Displays the top 10 players ranked by score.\n\n"
             "• `>help`\n"
-            "  Displays this command manual."
+            "  Displays this manual."
         ),
         inline=False
     )
@@ -143,30 +142,41 @@ async def addscores(ctx, *args):
 @bot.command(name="resetboard")
 @commands.has_role("ORGANIZACIJA")
 async def resetboard(ctx):
-    c.execute("DELETE FROM jackbox")
-    conn.commit()
-    await ctx.send("🗑️ The leaderboard has been completely reset!")
+    docs = db.collection("marathon").stream()
+    count = 0
+    for doc in docs:
+        doc.reference.delete()
+        count += 1
+    
+    await ctx.send(f"🗑️ The leaderboard has been completely reset! ({count} records deleted)")
 
-# Command: >leaderboard (PUBLIC - NO ROLE REQUIRED)
+# Command: >leaderboard (PUBLIC)
 @bot.command()
 async def leaderboard(ctx):
-    c.execute("SELECT player, score FROM jackbox ORDER BY score DESC LIMIT 10")
-    rows = c.fetchall()
+    docs = db.collection("marathon").order_by("score", direction=firestore.Query.DESCENDING).limit(10).stream()
     
-    if not rows:
-        return await ctx.send("The leaderboard is currently empty! Go play some Jackbox.")
-
     board = "**🏆 Official Jackbox Leaderboard 🏆**\n\n"
-    for index, row in enumerate(rows, 1):
-        board += f"**#{index}** {row[0]} — **{row[1]}** pts\n"
+    has_data = False
     
+    for index, doc in enumerate(docs, 1):
+        has_data = True
+        data = doc.to_dict()
+        player_name = doc.id  # Extract username directly from the document ID
+        score = data.get("score", 0)
+        board += f"**#{index}** {player_name} — **{score}** pts\n"
+    
+    if not has_data:
+        return await ctx.send("The leaderboard is currently empty! Go play some Jackbox.")
+        
     await ctx.send(board)
 
 # ==========================================
-# 7. RUN BOT
+# 6. RUN BOT
 # ==========================================
 if __name__ == "__main__":
     if not BOT_TOKEN:
         print("❌ Error: DISCORD_BOT_TOKEN is missing from your .env file!")
+    elif db is None:
+        print("❌ Error: Bot will not start without Firebase access.")
     else:
         bot.run(BOT_TOKEN)
