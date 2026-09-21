@@ -135,6 +135,8 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+serviceAccountKey.json
+__pycache__/
 
 # Spyder project settings
 .spyderproject
