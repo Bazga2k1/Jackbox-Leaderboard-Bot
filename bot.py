@@ -175,19 +175,19 @@ async def leaderboard(ctx):
 # ==========================================
 # 6. HEALTH CHECK SERVER (For Render Free Web Service)
 # ==========================================
-class HealthCheckHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Jackbox Bot is online!")
+#class HealthCheckHandler(BaseHTTPRequestHandler):
+#    def do_GET(self):
+#        self.send_response(200)
+#        self.end_headers()
+#        self.wfile.write(b"Jackbox Bot is online!")
 
-def run_health_server():
-    port = int(os.getenv("PORT", 8080))
-    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
-    server.serve_forever()
+#def run_health_server():
+#    port = int(os.getenv("PORT", 8080))
+#    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+#    server.serve_forever()
 
 # Start the health check web server in a daemon thread
-threading.Thread(target=run_health_server, daemon=True).start()
+#threading.Thread(target=run_health_server, daemon=True).start()
 
 # ==========================================
 # 7. RUN BOT
