@@ -8,10 +8,27 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # ==========================================
-# 1. LOAD ENVIRONMENT VARIABLES & FIREBASE
+# 1. HEALTH CHECK
+# ==========================================
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Jackbox Bot is online!")
+
+def run_health_server():
+    port = int(os.getenv("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    server.serve_forever()
+
+# Start the health check web server immediately in a background daemon thread
+threading.Thread(target=run_health_server, daemon=True).start()
+
+# ==========================================
+# 2. LOAD ENVIRONMENT VARIABLES & FIREBASE
 # ==========================================
 load_dotenv()
-TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
 # Initialize Firebase (Requires serviceAccountKey.json in the same directory)
 try:
@@ -23,7 +40,7 @@ except Exception as e:
     db = None
 
 # ==========================================
-# 2. DISCORD BOT CONFIGURATION
+# 3. DISCORD BOT CONFIGURATION
 # ==========================================
 intents = discord.Intents.default()
 intents.message_content = True
@@ -36,7 +53,7 @@ async def on_ready():
     print("------")
 
 # ==========================================
-# 3. GLOBAL ERROR HANDLER
+# 4. GLOBAL ERROR HANDLER
 # ==========================================
 @bot.event
 async def on_command_error(ctx, error):
@@ -49,7 +66,7 @@ async def on_command_error(ctx, error):
         print(f"Error in command {ctx.command}: {error}")
 
 # ==========================================
-# 4. HELPER FUNCTION TO UPDATE SCORE (FIRESTORE)
+# 5. HELPER FUNCTION TO UPDATE SCORE (FIRESTORE)
 # ==========================================
 def update_player_score(player_name: str, score_to_add: int) -> int:
     """Queries the 'marathon' collection for an existing score, adds points, and updates."""
@@ -67,7 +84,7 @@ def update_player_score(player_name: str, score_to_add: int) -> int:
     return new_total
 
 # ==========================================
-# 5. BOT COMMANDS
+# 6. BOT COMMANDS
 # ==========================================
 
 # Command: >help (PUBLIC)
@@ -173,29 +190,12 @@ async def leaderboard(ctx):
     await ctx.send(board)
 
 # ==========================================
-# 6. HEALTH CHECK SERVER (For Render Free Web Service)
-# ==========================================
-#class HealthCheckHandler(BaseHTTPRequestHandler):
-#    def do_GET(self):
-#        self.send_response(200)
-#        self.end_headers()
-#        self.wfile.write(b"Jackbox Bot is online!")
-
-#def run_health_server():
-#    port = int(os.getenv("PORT", 8080))
-#    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
-#    server.serve_forever()
-
-# Start the health check web server in a daemon thread
-#threading.Thread(target=run_health_server, daemon=True).start()
-
-# ==========================================
 # 7. RUN BOT
 # ==========================================
 if __name__ == "__main__":
-    if not TOKEN:
+    if not BOT_TOKEN:
         print("❌ Error: DISCORD_BOT_TOKEN is missing from your .env file!")
     elif db is None:
         print("❌ Error: Bot will not start without Firebase access.")
     else:
-        bot.run(TOKEN)
+        bot.run(BOT_TOKEN)
